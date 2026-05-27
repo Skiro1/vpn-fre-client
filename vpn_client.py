@@ -1368,41 +1368,48 @@ class Api:
             self.warp_status = "connecting"
             self._js("onWarpStatus", {"status": "connecting", "message": "Устанавливаем WARP-туннель..."})
 
-            self._force_cleanup_amnezia_services()
-            time.sleep(2.0)
+            # Проверить, не установлен ли уже сервис туннеля
+            existing_service = self._find_amnezia_service()
+            if existing_service:
+                log.info(f"Сервис {existing_service} уже установлен, просто запускаем")
+                new_service = existing_service
+                self.current_warp_service = new_service
+            else:
+                self._force_cleanup_amnezia_services()
+                time.sleep(2.0)
 
-            log.info(f"amneziawg.exe /installtunnelservice {conf}")
-            r = subprocess.run(
-                [amnezia_path, "/installtunnelservice", conf],
-                capture_output=True, timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-            stdout = decode_output(r.stdout)
-            stderr = decode_output(r.stderr)
-            log.info(f"installtunnelservice: rc={r.returncode} stdout='{stdout}' stderr='{stderr}'")
-            if r.returncode != 0:
-                raise RuntimeError(stderr.strip() or stdout.strip() or f"exit {r.returncode}")
+                log.info(f"amneziawg.exe /installtunnelservice {conf}")
+                r = subprocess.run(
+                    [amnezia_path, "/installtunnelservice", conf],
+                    capture_output=True, timeout=30,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                stdout = decode_output(r.stdout)
+                stderr = decode_output(r.stderr)
+                log.info(f"installtunnelservice: rc={r.returncode} stdout='{stdout}' stderr='{stderr}'")
+                if r.returncode != 0:
+                    raise RuntimeError(stderr.strip() or stdout.strip() or f"exit {r.returncode}")
 
-            new_service = None
-            for attempt in range(15):
-                time.sleep(0.5)
-                found = self._find_amnezia_service()
-                if found:
-                    new_service = found
-                    log.info(f"Сервис найден на попытке {attempt}: {new_service}")
-                    break
+                new_service = None
+                for attempt in range(15):
+                    time.sleep(0.5)
+                    found = self._find_amnezia_service()
+                    if found:
+                        new_service = found
+                        log.info(f"Сервис найден на попытке {attempt}: {new_service}")
+                        break
 
-            if not new_service:
-                conf_name = os.path.splitext(os.path.basename(conf))[0]
-                new_service = f"AmneziaWGTunnel${conf_name}"
-                log.warning(f"Сервис не найден, используем предсказанное имя: {new_service}")
+                if not new_service:
+                    conf_name = os.path.splitext(os.path.basename(conf))[0]
+                    new_service = f"AmneziaWGTunnel${conf_name}"
+                    log.warning(f"Сервис не найден, используем предсказанное имя: {new_service}")
 
-            self.current_warp_service = new_service
+                self.current_warp_service = new_service
 
             q_check = sc_run("query", new_service, timeout=10)
             already_running = bool(re.search(r"(?:STATE|СОСТОЯНИЕ)\s*:\s*4\b", q_check.stdout_decoded, re.IGNORECASE))
             if already_running:
-                log.info(f"Сервис {new_service} уже RUNNING после установки, sc start не нужен")
+                log.info(f"Сервис {new_service} уже RUNNING, sc start не нужен")
             else:
                 r2 = sc_run("start", new_service, timeout=15)
                 log.info(f"sc start: rc={r2.returncode} out='{r2.stdout_decoded.strip()}'")
