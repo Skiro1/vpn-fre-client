@@ -936,14 +936,33 @@ class Api:
                 return []
 
             servers = []
-            csv_pattern = re.compile(
+            # Новый формат: host,ip_address,port
+            new_pattern = re.compile(
+                r'^([a-zA-Z0-9.\-]+),(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}),(\d{1,5})$'
+            )
+            # Старый CSV-формат: CC,Country,host,ip,port
+            old_csv_pattern = re.compile(
                 r'^([A-Z]{2}),([^,]*),([a-zA-Z0-9.\-]+),(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}),(\d{1,5})$'
             )
             for line in stdout.splitlines():
                 line = line.strip()
                 if not line:
                     continue
-                m = csv_pattern.match(line)
+                # Пробуем новый формат
+                m = new_pattern.match(line)
+                if m:
+                    host, ip, port = m.groups()
+                    octets = ip.split('.')
+                    if all(0 <= int(o) <= 255 for o in octets):
+                        servers.append({
+                            "country": region,
+                            "host": host,
+                            "ip": ip,
+                            "port": port,
+                        })
+                        continue
+                # Пробуем старый CSV-формат
+                m = old_csv_pattern.match(line)
                 if m:
                     country_code, country_name, host, ip, port = m.groups()
                     octets = ip.split('.')
