@@ -1644,14 +1644,87 @@ class Api:
 
 
 # ---------------------------------------------------------------------------
+# System Tray
+# ---------------------------------------------------------------------------
+import pystray
+from PIL import Image as PILImage
+
+
+class TrayManager:
+    def __init__(self, window, api):
+        self.window = window
+        self.api = api
+        self.icon = None
+        self._icon_path = get_resource_path("IMG/icon.ico")
+        self._running = threading.Event()
+        self._thread = None
+
+    def _create_image(self):
+        try:
+            if os.path.exists(self._icon_path):
+                return PILImage.open(self._icon_path)
+        except Exception as e:
+            log.warning(f"Не удалось загрузить иконку для трея: {e}")
+        img = PILImage.new("RGBA", (64, 64), (124, 92, 255, 255))
+        return img
+
+    def _on_show(self, icon, item):
+        try:
+            self.window.show()
+            self.window.on_top()
+        except Exception as e:
+            log.warning(f"show: {e}")
+
+    def _on_exit(self, icon, item):
+        try:
+            self.api.shutdown()
+        except Exception as e:
+            log.warning(f"shutdown: {e}")
+        try:
+            self.window.destroy()
+        except Exception:
+            pass
+        if self.icon:
+            self.icon.stop()
+
+    def _setup(self, icon):
+        self.icon = icon
+
+    def start(self):
+        def run():
+            try:
+                image = self._create_image()
+                menu = pystray.Menu(
+                    pystray.MenuItem("Показать VPN Client", self._on_show, default=True),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem("Выход", self._on_exit),
+                )
+                self.icon = pystray.Icon("vpn-client", image, "VPN Client", menu)
+                self.icon.run()
+            except Exception as e:
+                log.error(f"Ошибка трея: {e}")
+
+        self._thread = threading.Thread(target=run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        if self.icon:
+            try:
+                self.icon.stop()
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def on_closing(api):
+def on_closing(api, window):
     try:
-        api.shutdown()
+        log.info("Окно закрыто, приложение свёрнуто в трей")
+        window.hide()
     except Exception as e:
-        log.warning(f"on_closing: {e}")
-    return True
+        log.warning(f"on_closing hide: {e}")
+    return False  # отменяем закрытие, скрываем окно
 
 
 def main():
@@ -1687,13 +1760,18 @@ def main():
                   api.start_generate_warp, api.start_connect_warp,
                   api.start_disconnect_warp, api.start_ping, api.force_kill_all)
 
-    window.events.closing += lambda: on_closing(api)
+    tray = TrayManager(window, api)
+    tray.start()
+
+    window.events.closing += lambda: on_closing(api, window)
 
     try:
         webview.start(debug="--debug" in sys.argv, gui="edgechromium")
     except Exception as e:
         log.warning(f"edgechromium недоступен: {e}")
         webview.start(debug="--debug" in sys.argv)
+    finally:
+        tray.stop()
 
 
 if __name__ == "__main__":
