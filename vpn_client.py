@@ -22,6 +22,7 @@ import socket
 import platform
 import urllib.request
 from datetime import datetime
+from dataclasses import dataclass
 
 try:
     import winreg
@@ -1648,6 +1649,35 @@ class Api:
                 self._force_cleanup_amnezia_services()
         except Exception as e:
             log.warning(f"shutdown warp: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Утилита для sc.exe (управление службами Windows)
+# ---------------------------------------------------------------------------
+@dataclass
+class ScResult:
+    returncode: int
+    stdout_decoded: str = ""
+    stderr_decoded: str = ""
+
+def sc_run(*args, timeout=30):
+    try:
+        r = subprocess.run(
+            ["sc.exe"] + [a for a in args if a],
+            capture_output=True, timeout=timeout,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        return ScResult(
+            returncode=r.returncode,
+            stdout_decoded=decode_output(r.stdout or b""),
+            stderr_decoded=decode_output(r.stderr or b""),
+        )
+    except subprocess.TimeoutExpired:
+        return ScResult(returncode=-1, stdout_decoded="", stderr_decoded="timeout")
+    except FileNotFoundError:
+        return ScResult(returncode=-2, stdout_decoded="", stderr_decoded="sc.exe not found")
+    except Exception as e:
+        return ScResult(returncode=-3, stdout_decoded="", stderr_decoded=str(e))
 
 
 # ---------------------------------------------------------------------------
