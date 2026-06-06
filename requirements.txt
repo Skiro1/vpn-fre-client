@@ -1,4 +1,12 @@
-pywebview>=5.0
-pyinstaller>=6.0
+# Runtime dependencies для VPN-Client v2.0.0
+# Python 3.10+ обязателен (используются match/case, structural pattern matching)
+
+# GUI: pywebview использует WebView2 Runtime (Edge) на Windows.
+# Требует --uac-admin для запуска от администратора.
+pywebview>=5.0,<6.0
+
+# Tray icon. Требуется для pystray, иначе иконка не отобразится.
 pystray>=0.19.0
+
+# Генератор иконки трея (ImageDraw) + загрузка icon.ico.
 pillow>=10.0.0

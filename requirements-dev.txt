@@ -1,0 +1,7 @@
+# Build / dev dependencies — НЕ нужны конечному пользователю.
+# Используется только в build_release.bat / build_debug.bat.
+
+-r requirements.txt
+
+# Сборка single-file .exe через PyInstaller.
+pyinstaller>=6.0,<7.0
