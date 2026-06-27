@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=My Product
+Comment=A free-vpn-new application
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/free-vpn-new.exe %u
+Terminal=false
+Type=Application
+Icon=free-vpn-new.exe
+Categories=Utility;
+StartupWMClass=free-vpn-new.exe
+
+ 
