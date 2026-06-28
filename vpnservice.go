@@ -88,22 +88,44 @@ func (s *VpnService) Connect(profileName string) error {
 		return fmt.Errorf("load profile: %w", err)
 	}
 
-	if profile.Token != "" {
-		if err := s.client.KeepAlive(profile.Token, profile.AccountID); err != nil {
-			fmt.Printf("keepalive warning: %v\n", err)
-		}
-	}
-
 	settings, err := vpn.LoadSettings()
 	if err != nil {
 		return fmt.Errorf("load settings: %w", err)
 	}
 
-	return s.tunnel.Up(profile, settings)
+	if err := s.tunnel.Up(profile, settings); err != nil {
+		if vpn.Log != nil {
+			vpn.Log.Error(fmt.Sprintf("Connect %q failed: %v", profileName, err))
+		}
+		return err
+	}
+
+	settings.LastProfile = profileName
+	if err := vpn.SaveSettings(settings); err != nil {
+		if vpn.Log != nil {
+			vpn.Log.Warn(fmt.Sprintf("save last_profile: %v", err))
+		}
+	}
+	s.settings = settings
+
+	if vpn.Log != nil {
+		vpn.Log.Info(fmt.Sprintf("Connect %q OK", profileName))
+	}
+	return nil
 }
 
 func (s *VpnService) Disconnect() error {
-	return s.tunnel.Down()
+	err := s.tunnel.Down()
+	if err != nil {
+		if vpn.Log != nil {
+			vpn.Log.Error(fmt.Sprintf("Disconnect failed: %v", err))
+		}
+	} else {
+		if vpn.Log != nil {
+			vpn.Log.Info("Disconnected")
+		}
+	}
+	return err
 }
 
 func (s *VpnService) GetStatus() *vpn.VpnStatus {
@@ -157,8 +179,16 @@ func (s *VpnService) GetSettings() vpn.Settings {
 }
 
 func (s *VpnService) SaveSettings(settings vpn.Settings) error {
+	if settings.AutoStart != s.settings.AutoStart {
+		if err := vpn.SetAutoStart(settings.AutoStart); err != nil {
+			return fmt.Errorf("auto-start: %w", err)
+		}
+	}
 	if err := vpn.SaveSettings(&settings); err != nil {
 		return err
+	}
+	if vpn.Log != nil {
+		vpn.Log.SetEnabled(settings.LogEnabled)
 	}
 	s.settings = &settings
 	return nil

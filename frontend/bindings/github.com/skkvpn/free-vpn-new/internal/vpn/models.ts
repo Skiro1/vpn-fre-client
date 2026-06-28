@@ -6,16 +6,24 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 export class Settings {
-    "dns": string;
-    "kill_switch": boolean;
+    "log_enabled": boolean;
+    "auto_connect": boolean;
+    "last_profile": string;
+    "auto_start": boolean;
 
     /** Creates a new Settings instance. */
     constructor($$source: Partial<Settings> = {}) {
-        if (!("dns" in $$source)) {
-            this["dns"] = "";
+        if (!("log_enabled" in $$source)) {
+            this["log_enabled"] = false;
         }
-        if (!("kill_switch" in $$source)) {
-            this["kill_switch"] = false;
+        if (!("auto_connect" in $$source)) {
+            this["auto_connect"] = false;
+        }
+        if (!("last_profile" in $$source)) {
+            this["last_profile"] = "";
+        }
+        if (!("auto_start" in $$source)) {
+            this["auto_start"] = false;
         }
 
         Object.assign(this, $$source);

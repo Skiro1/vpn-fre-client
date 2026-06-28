@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/amnezia-vpn/amneziawg-go/conn"
@@ -47,6 +48,10 @@ func (tm *TunnelManager) Up(profile *Profile, settings *Settings) error {
 
 	if tm.activeTun != nil {
 		return fmt.Errorf("tunnel already active")
+	}
+
+	if Log != nil {
+		Log.Info(fmt.Sprintf("Connecting to profile %q (endpoint=%s)", profile.Name, profile.Endpoint))
 	}
 
 	logger := device.NewLogger(device.LogLevelVerbose, "(vpn) ")
@@ -109,19 +114,18 @@ func (tm *TunnelManager) Up(profile *Profile, settings *Settings) error {
 		return fmt.Errorf("device up: %w", err)
 	}
 
-	if err := configureNetwork(intfName, profile, settings); err != nil {
+	resolvedEP := resolveEndpoint(profile.Endpoint)
+
+	if err := configureNetwork(intfName, profile, settings, resolvedEP); err != nil {
 		at.close()
 		return fmt.Errorf("configure network: %w", err)
 	}
 
-	if settings.KillSwitch {
-		if err := enableKillSwitch(profile.Endpoint); err != nil {
-			at.close()
-			return fmt.Errorf("kill switch: %w", err)
-		}
-	}
-
 	tm.activeTun = at
+
+	if Log != nil {
+		Log.Info(fmt.Sprintf("Connected to %q (address=%s)", profile.Name, profile.Address))
+	}
 	return nil
 }
 
@@ -133,8 +137,13 @@ func (tm *TunnelManager) Down() error {
 		return fmt.Errorf("no active tunnel")
 	}
 
+	name := tm.activeTun.profile.Name
 	tm.activeTun.close()
 	tm.activeTun = nil
+
+	if Log != nil {
+		Log.Info(fmt.Sprintf("Disconnected from %q", name))
+	}
 	return nil
 }
 
@@ -178,10 +187,6 @@ func (tm *TunnelManager) IsActive() bool {
 
 func (at *activeTunnel) close() {
 	at.closeOnce.Do(func() {
-		if at.settings != nil && at.settings.KillSwitch {
-			disableKillSwitch()
-		}
-
 		if at.tun != nil {
 			if nativeTun, ok := at.tun.(*tun.NativeTun); ok {
 				luid := winipcfg.LUID(nativeTun.LUID())
@@ -309,32 +314,15 @@ func configureDevice(dev *device.Device, profile *Profile) error {
 	return nil
 }
 
-func configureNetwork(intfName string, profile *Profile, settings *Settings) error {
+func configureNetwork(intfName string, profile *Profile, settings *Settings, resolvedEP string) error {
 	addr := strings.Split(profile.Address, "/")[0]
 
 	runCmd(fmt.Sprintf(`netsh interface ip set address "%s" static %s 255.255.255.255`, intfName, addr))
-	runCmd(fmt.Sprintf(`netsh interface ip set dns "%s" static %s register=primary`, intfName, settings.Dns))
-
-	host := profile.Endpoint
-	if !strings.Contains(host, ":") {
-		host = host + ":2408"
-	}
-	hostIP, _, _ := net.SplitHostPort(host)
-	if net.ParseIP(hostIP) == nil {
-		ips, err := net.LookupHost(hostIP)
-		if err == nil {
-			for _, ip := range ips {
-				if p := net.ParseIP(ip); p != nil && p.To4() != nil {
-					hostIP = ip
-					break
-				}
-			}
-		}
-	}
+	runCmd(fmt.Sprintf(`netsh interface ip set dns "%s" static 1.1.1.1 register=primary`, intfName))
 
 	gw := getDefaultGateway()
-	if hostIP != "" && gw != "" {
-		runCmd(fmt.Sprintf(`route add %s mask 255.255.255.255 %s`, hostIP, gw))
+	if resolvedEP != "" && gw != "" {
+		runCmd(fmt.Sprintf(`route add %s mask 255.255.255.255 %s`, resolvedEP, gw))
 	}
 
 	runCmd(fmt.Sprintf(`netsh interface ip add route 0.0.0.0/0 "%s" %s metric=0 store=active`, intfName, addr))
@@ -370,33 +358,23 @@ func getDefaultGateway() string {
 
 func runCmd(cmd string) error {
 	c := exec.Command("cmd", "/c", cmd)
+	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return c.Run()
 }
 
 func runCmdOutput(cmd string) (string, error) {
 	c := exec.Command("cmd", "/c", cmd)
+	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	out, err := c.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
 
-func enableKillSwitch(endpoint string) error {
-	if ep := extractIP(endpoint); ep != "" {
-		runCmd(fmt.Sprintf(`netsh advfirewall firewall add rule name="SKKVPN Allow EP" dir=out action=allow remoteip=%s`, ep))
-	}
-	return runCmd(`netsh advfirewall firewall add rule name="SKKVPN Block" dir=out action=block`)
-}
-
-func disableKillSwitch() {
-	runCmd(`netsh advfirewall firewall delete rule name="SKKVPN Allow EP"`)
-	runCmd(`netsh advfirewall firewall delete rule name="SKKVPN Block"`)
-}
-
-func extractIP(endpoint string) string {
+func resolveEndpoint(endpoint string) string {
 	if !strings.Contains(endpoint, ":") {
-		endpoint = endpoint + ":2408"
+		endpoint += ":2408"
 	}
-	host, _, err := net.SplitHostPort(endpoint)
-	if err != nil {
+	host, _, _ := net.SplitHostPort(endpoint)
+	if host == "" {
 		return ""
 	}
 	if ip := net.ParseIP(host); ip != nil {
@@ -408,3 +386,6 @@ func extractIP(endpoint string) string {
 	}
 	return ips[0]
 }
+
+
+

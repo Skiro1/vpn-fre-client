@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"golang.org/x/sys/windows/registry"
 )
 
 var DefaultAWG = AWGConfig{
@@ -128,9 +130,6 @@ func LoadSettings() (*Settings, error) {
 		s = DefaultSettings
 		return &s, nil
 	}
-	if s.Dns == "" {
-		s.Dns = DefaultSettings.Dns
-	}
 	return &s, nil
 }
 
@@ -147,4 +146,30 @@ func SaveSettings(s *Settings) error {
 		return fmt.Errorf("write settings: %w", err)
 	}
 	return nil
+}
+
+func LogsDir() string {
+	dir, _ := os.UserConfigDir()
+	return filepath.Join(dir, "free-vpn", "logs")
+}
+
+func SetAutoStart(enabled bool) error {
+	key, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE)
+	if err != nil {
+		return fmt.Errorf("open registry: %w", err)
+	}
+	defer key.Close()
+
+	if enabled {
+		exe, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("get executable path: %w", err)
+		}
+		return key.SetStringValue("SKKVPN", exe)
+	} else {
+		if err := key.DeleteValue("SKKVPN"); err != nil && err != registry.ErrNotExist {
+			return err
+		}
+		return nil
+	}
 }

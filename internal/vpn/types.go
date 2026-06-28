@@ -47,13 +47,16 @@ type VpnStatus struct {
 }
 
 type Settings struct {
-	Dns        string `json:"dns"`
-	KillSwitch bool   `json:"kill_switch"`
+	LogEnabled  bool   `json:"log_enabled"`
+	AutoConnect bool   `json:"auto_connect"`
+	LastProfile string `json:"last_profile"`
+	AutoStart   bool   `json:"auto_start"`
 }
 
 var DefaultSettings = Settings{
-	Dns:        "1.1.1.1",
-	KillSwitch: true,
+	LogEnabled:  true,
+	AutoConnect: false,
+	AutoStart:   false,
 }
 
 type EndpointInfo struct {

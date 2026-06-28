@@ -13,10 +13,6 @@ function polarToCartesian(cx: number, cy: number, r: number, deg: number) {
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
 }
 
-function sanitizeDns(val: string) {
-  return val.replace(/[^a-zA-Z0-9.-]/g, "");
-}
-
 function describeArc(r: number, startDeg: number, endDeg: number, clockwise: boolean) {
   const start = polarToCartesian(50, 50, r, endDeg);
   const end = polarToCartesian(50, 50, r, startDeg);
@@ -25,18 +21,17 @@ function describeArc(r: number, startDeg: number, endDeg: number, clockwise: boo
 }
 
 function App() {
-  const { status, profiles, loading, error, theme, settings, toggleTheme, dismissError, register, connect, disconnect, deleteProfile, saveSettings } = useVpn();
+  const { status, profiles, loading, error, theme, settings, updateAvailable, toggleTheme, dismissError, register, connect, disconnect, deleteProfile, saveSettings } = useVpn();
   const [selectedProfile, setSelectedProfile] = useState("");
   const [newProfileName, setNewProfileName] = useState("");
   const [showRegister, setShowRegister] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [dnsDropdownOpen, setDnsDropdownOpen] = useState(false);
-  const [dnsInput, setDnsInput] = useState("");
-  const [ksInput, setKsInput] = useState(true);
+  const [logInput, setLogInput] = useState(true);
+  const [autoConnectInput, setAutoConnectInput] = useState(false);
+  const [autoStartInput, setAutoStartInput] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const dnsDropdownRef = useRef<HTMLDivElement>(null);
   const prevTX = useRef(0);
   const prevRX = useRef(0);
   const prevTime = useRef(0);
@@ -47,16 +42,6 @@ function App() {
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dnsDropdownRef.current && !dnsDropdownRef.current.contains(e.target as Node)) {
-        setDnsDropdownOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -79,8 +64,9 @@ function App() {
   }, [status.tx_bytes, status.rx_bytes, status.connected]);
 
   useEffect(() => {
-    setDnsInput(settings.dns);
-    setKsInput(settings.kill_switch);
+    setLogInput(settings.log_enabled);
+    setAutoConnectInput(settings.auto_connect);
+    setAutoStartInput(settings.auto_start);
   }, [settings]);
 
   const handleConnect = async () => {
@@ -113,7 +99,7 @@ function App() {
   };
 
   const handleSaveSettings = async () => {
-    const s: AppSettings = { dns: sanitizeDns(dnsInput).trim() || "1.1.1.1", kill_switch: ksInput };
+    const s: AppSettings = { log_enabled: logInput, auto_connect: autoConnectInput, last_profile: settings.last_profile, auto_start: autoStartInput };
     await saveSettings(s);
     setShowSettings(false);
   };
@@ -170,10 +156,16 @@ function App() {
           </div>
         </div>
 
+        {updateAvailable && (
+          <div className={`mt-3 px-3 py-2 rounded-lg text-[11px] font-medium text-center ${dark ? "bg-neutral-900 border border-neutral-700 text-neutral-400" : "bg-neutral-100 border border-neutral-300 text-neutral-500"}`}>
+            New version <span className="font-semibold">{updateAvailable}</span> available —{" "}
+            <a href="https://github.com/Skiro1/vpn-free-client/releases/latest" target="_blank" className="underline">download</a>
+          </div>
+        )}
         <div className="flex-1 flex flex-col items-center justify-center gap-5">
           <div className="relative">
             {status.connected && (
-              <svg className="absolute inset-0 w-48 h-48" viewBox="0 0 100 100" fill="none">
+              <svg className="absolute inset-0 w-48 h-48 pointer-events-none" viewBox="0 0 100 100" fill="none">
                 <path
                   d={describeArc(44, 0, rxAngle, true)}
                   stroke="currentColor"
@@ -230,17 +222,24 @@ function App() {
           </div>
 
           {status.connected && (
-            <div className="flex items-center justify-center gap-6 text-center">
-              <div>
-                <div className={`text-[11px] font-medium tracking-wider uppercase ${dark ? "text-neutral-500" : "text-neutral-400"}`}>Download</div>
-                <div className="text-sm font-semibold tabular-nums tracking-tight">{formatBytes(status.rx_bytes)}</div>
+            <>
+              <div className="flex items-center justify-center w-full max-w-[192px]">
+                <div className="flex-1 text-center">
+                  <div className={`text-[11px] font-medium tracking-wider uppercase ${dark ? "text-neutral-500" : "text-neutral-400"}`}>Download</div>
+                  <div className="text-sm font-semibold tabular-nums tracking-tight">{formatBytes(status.rx_bytes)}</div>
+                </div>
+                <div className={`w-px h-8 shrink-0 ${dark ? "bg-neutral-800" : "bg-neutral-200"}`} />
+                <div className="flex-1 text-center">
+                  <div className={`text-[11px] font-medium tracking-wider uppercase ${dark ? "text-neutral-500" : "text-neutral-400"}`}>Upload</div>
+                  <div className="text-sm font-semibold tabular-nums tracking-tight">{formatBytes(status.tx_bytes)}</div>
+                </div>
               </div>
-              <div className={`w-px h-8 ${dark ? "bg-neutral-800" : "bg-neutral-200"}`} />
-              <div>
-                <div className={`text-[11px] font-medium tracking-wider uppercase ${dark ? "text-neutral-500" : "text-neutral-400"}`}>Upload</div>
-                <div className="text-sm font-semibold tabular-nums tracking-tight">{formatBytes(status.tx_bytes)}</div>
-              </div>
-            </div>
+              {status.uptime && (
+                <div className={`text-[11px] font-medium tabular-nums tracking-tight ${dark ? "text-neutral-600" : "text-neutral-500"}`}>
+                  Connected {status.uptime}
+                </div>
+              )}
+            </>
           )}
 
           {!status.connected && (
@@ -350,85 +349,74 @@ function App() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className={`block text-sm font-medium ${dark ? "text-neutral-400" : "text-neutral-500"}`}>DNS server</label>
-              <div className="relative" ref={dnsDropdownRef}>
-                <div
-                  onClick={() => setDnsDropdownOpen((o) => !o)}
-                  className={`w-full flex items-center justify-between ${dark ? "bg-neutral-900 border-neutral-700" : "bg-neutral-100 border-neutral-300"} border-2 rounded-lg px-4 py-3 text-sm cursor-pointer select-none transition-colors ${
-                    dnsDropdownOpen ? "ring-2 ring-neutral-500" : ""
-                  }`}
-                >
-                  <span className={dnsInput ? "" : dark ? "text-neutral-500" : "text-neutral-400"}>
-                    {dnsInput || "Select or type DNS"}
-                  </span>
-                  <svg className={`w-4 h-4 ${dark ? "text-neutral-500" : "text-neutral-400"} transition-transform ${dnsDropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                  </svg>
+            <div className={`border-t ${dark ? "border-neutral-800" : "border-neutral-200"} pt-4 space-y-4`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className={`text-sm font-medium ${dark ? "text-neutral-400" : "text-neutral-500"}`}>Connection Logs</div>
+                  <div className={`text-[11px] ${dark ? "text-neutral-600" : "text-neutral-400"}`}>Save connection events to file</div>
                 </div>
-                {dnsDropdownOpen && (
-                  <div className={`absolute z-10 w-full mt-1 ${dark ? "bg-neutral-900 border-neutral-700" : "bg-neutral-100 border-neutral-300"} border-2 rounded-xl overflow-hidden shadow-xl`}>
-                    {[
-                      { label: "Cloudflare", value: "1.1.1.1" },
-                      { label: "Google", value: "8.8.8.8" },
-                      { label: "Quad9", value: "9.9.9.9" },
-                      { label: "OpenDNS", value: "208.67.222.222" },
-                      { label: "AdGuard", value: "94.140.14.14" },
-                      { label: "SkyDNS", value: "193.58.251.251" },
-                      { label: "Xbox DNS", value: "111.88.96.50" },
-                    ].map((p) => (
-                      <div
-                        key={p.value}
-                        onClick={() => { setDnsInput(p.value); setDnsDropdownOpen(false); }}
-                        className={`w-full text-left px-4 py-3 text-sm cursor-pointer select-none transition-colors ${
-                          dnsInput === p.value
-                            ? dark ? "bg-neutral-800 text-white" : "bg-neutral-200 text-black"
-                            : dark ? "text-white hover:bg-neutral-800" : "text-black hover:bg-neutral-200"
-                        }`}
-                      >
-                        <span>{p.label}</span>
-                        <span className={`ml-2 text-xs ${dark ? "text-neutral-500" : "text-neutral-400"}`}>{p.value}</span>
-                      </div>
-                    ))}
-                    <div className={`border-t ${dark ? "border-neutral-700" : "border-neutral-300"}`}>
-                      <input
-                        type="text"
-                        value={dnsInput}
-                        onChange={(e) => setDnsInput(sanitizeDns(e.target.value))}
-                        placeholder="Custom (IP or domain)"
-                        className={`w-full ${dark ? "bg-transparent text-white placeholder-neutral-500" : "bg-transparent text-black placeholder-neutral-400"} px-4 py-3 text-sm focus:outline-none`}
-                        onFocus={() => setDnsDropdownOpen(true)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") { setDnsDropdownOpen(false); handleSaveSettings(); }
-                        }}
-                        autoFocus
-                      />
-                    </div>
-                  </div>
-                )}
+                <div
+                  onClick={() => setLogInput(!logInput)}
+                  className={`w-12 h-6 rounded-full transition-colors duration-200 cursor-pointer flex items-center shrink-0 ${
+                    logInput
+                      ? dark ? "bg-neutral-600" : "bg-black"
+                      : dark ? "bg-neutral-800 border-neutral-700" : "bg-neutral-200 border-neutral-300"
+                  } border-2`}
+                >
+                  <div className={`w-4 h-4 rounded-full transition-all duration-200 ${
+                    logInput ? "translate-x-6" : "translate-x-0.5"
+                  } ${
+                    logInput
+                      ? dark ? "bg-white" : "bg-white"
+                      : dark ? "bg-neutral-500" : "bg-neutral-400"
+                  }`} />
+                </div>
               </div>
-            </div>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <div className={`text-sm font-medium ${dark ? "text-neutral-400" : "text-neutral-500"}`}>Kill Switch</div>
-                <div className={`text-[11px] ${dark ? "text-neutral-600" : "text-neutral-400"}`}>Block internet if VPN drops</div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className={`text-sm font-medium ${dark ? "text-neutral-400" : "text-neutral-500"}`}>Auto-connect</div>
+                  <div className={`text-[11px] ${dark ? "text-neutral-600" : "text-neutral-400"}`}>Connect on app startup</div>
+                </div>
+                <div
+                  onClick={() => setAutoConnectInput(!autoConnectInput)}
+                  className={`w-12 h-6 rounded-full transition-colors duration-200 cursor-pointer flex items-center shrink-0 ${
+                    autoConnectInput
+                      ? dark ? "bg-neutral-600" : "bg-black"
+                      : dark ? "bg-neutral-800 border-neutral-700" : "bg-neutral-200 border-neutral-300"
+                  } border-2`}
+                >
+                  <div className={`w-4 h-4 rounded-full transition-all duration-200 ${
+                    autoConnectInput ? "translate-x-6" : "translate-x-0.5"
+                  } ${
+                    autoConnectInput
+                      ? dark ? "bg-white" : "bg-white"
+                      : dark ? "bg-neutral-500" : "bg-neutral-400"
+                  }`} />
+                </div>
               </div>
-              <div
-                onClick={() => setKsInput(!ksInput)}
-                className={`w-12 h-6 rounded-full transition-colors duration-200 cursor-pointer flex items-center shrink-0 ${
-                  ksInput
-                    ? dark ? "bg-neutral-600" : "bg-black"
-                    : dark ? "bg-neutral-800 border-neutral-700" : "bg-neutral-200 border-neutral-300"
-                } border-2`}
-              >
-                <div className={`w-4 h-4 rounded-full transition-all duration-200 ${
-                  ksInput ? "translate-x-6" : "translate-x-0.5"
-                } ${
-                  ksInput
-                    ? dark ? "bg-white" : "bg-white"
-                    : dark ? "bg-neutral-500" : "bg-neutral-400"
-                }`} />
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className={`text-sm font-medium ${dark ? "text-neutral-400" : "text-neutral-500"}`}>Auto-start</div>
+                  <div className={`text-[11px] ${dark ? "text-neutral-600" : "text-neutral-400"}`}>Launch with Windows</div>
+                </div>
+                <div
+                  onClick={() => setAutoStartInput(!autoStartInput)}
+                  className={`w-12 h-6 rounded-full transition-colors duration-200 cursor-pointer flex items-center shrink-0 ${
+                    autoStartInput
+                      ? dark ? "bg-neutral-600" : "bg-black"
+                      : dark ? "bg-neutral-800 border-neutral-700" : "bg-neutral-200 border-neutral-300"
+                  } border-2`}
+                >
+                  <div className={`w-4 h-4 rounded-full transition-all duration-200 ${
+                    autoStartInput ? "translate-x-6" : "translate-x-0.5"
+                  } ${
+                    autoStartInput
+                      ? dark ? "bg-white" : "bg-white"
+                      : dark ? "bg-neutral-500" : "bg-neutral-400"
+                  }`} />
+                </div>
               </div>
             </div>
 

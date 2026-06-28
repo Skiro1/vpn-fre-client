@@ -4,8 +4,10 @@ import * as VpnModels from "../../bindings/github.com/skkvpn/free-vpn-new/intern
 import * as Models from "../../bindings/github.com/skkvpn/free-vpn-new/models";
 
 export interface AppSettings {
-  dns: string;
-  kill_switch: boolean;
+  log_enabled: boolean;
+  auto_connect: boolean;
+  last_profile: string;
+  auto_start: boolean;
 }
 
 export function useVpn() {
@@ -14,9 +16,11 @@ export function useVpn() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [settings, setSettings] = useState<AppSettings>({ dns: "1.1.1.1", kill_switch: true });
+  const [settings, setSettings] = useState<AppSettings>({ log_enabled: true, auto_connect: false, last_profile: "", auto_start: false });
+  const [updateAvailable, setUpdateAvailable] = useState("");
   const errorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoConnectDone = useRef(false);
 
   const showError = useCallback((msg: string) => {
     setError(msg);
@@ -108,7 +112,7 @@ export function useVpn() {
   const loadSettings = useCallback(async () => {
     try {
       const s = await VpnService.GetSettings();
-      setSettings({ dns: s.dns, kill_switch: s.kill_switch });
+      setSettings({ log_enabled: s.log_enabled, auto_connect: s.auto_connect, last_profile: s.last_profile, auto_start: s.auto_start });
     } catch (e: any) {
       console.error("settings:", e);
     }
@@ -116,8 +120,10 @@ export function useVpn() {
 
   const saveSettings = useCallback(async (s: AppSettings) => {
     const v = new VpnModels.Settings();
-    v.dns = s.dns;
-    v.kill_switch = s.kill_switch;
+    v.log_enabled = s.log_enabled;
+    v.auto_connect = s.auto_connect;
+    v.last_profile = s.last_profile;
+    v.auto_start = s.auto_start;
     try {
       await VpnService.SaveSettings(v);
       setSettings(s);
@@ -126,16 +132,60 @@ export function useVpn() {
     }
   }, [showError]);
 
+  const appVersion = "3.0.0";
+
+  const semverGt = (a: string, b: string): boolean => {
+    const sa = a.split(".").map(Number);
+    const sb = b.split(".").map(Number);
+    for (let i = 0; i < Math.max(sa.length, sb.length); i++) {
+      if ((sa[i] || 0) > (sb[i] || 0)) return true;
+      if ((sa[i] || 0) < (sb[i] || 0)) return false;
+    }
+    return false;
+  };
+
+  const checkUpdate = useCallback(async () => {
+    try {
+      const ctrl = new AbortController();
+      const id = setTimeout(() => ctrl.abort(), 5000);
+      const resp = await fetch("https://api.github.com/repos/Skiro1/vpn-free-client/releases/latest", { signal: ctrl.signal });
+      clearTimeout(id);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const latest = (data.tag_name || "").replace(/^v/, "");
+      if (latest && semverGt(latest, appVersion)) setUpdateAvailable(latest);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     refreshProfiles();
     refreshStatus();
     loadSettings();
+    checkUpdate();
     pollingRef.current = setInterval(refreshStatus, 2000);
+
+    const autoTimer = setTimeout(async () => {
+      if (autoConnectDone.current) return;
+      try {
+        const s = await VpnService.GetSettings();
+        if (s.auto_connect && s.last_profile) {
+          autoConnectDone.current = true;
+          await VpnService.Connect(s.last_profile);
+          refreshStatus();
+        }
+      } catch {
+        // ignore
+      }
+    }, 1000);
+
     return () => {
+      clearTimeout(autoTimer);
       if (pollingRef.current) clearInterval(pollingRef.current);
       if (errorTimer.current) clearTimeout(errorTimer.current);
     };
-  }, [refreshProfiles, refreshStatus, loadSettings]);
+  }, [refreshProfiles, refreshStatus, loadSettings, checkUpdate]);
 
-  return { status, profiles, loading, error, theme, settings, toggleTheme, dismissError, register, connect, disconnect, deleteProfile, loadSettings, saveSettings };
+  return { status, profiles, loading, error, theme, settings, updateAvailable, toggleTheme, dismissError, register, connect, disconnect, deleteProfile, loadSettings, saveSettings };
 }
