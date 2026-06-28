@@ -3,12 +3,18 @@ import { VpnService } from "../../bindings/github.com/skkvpn/free-vpn-new";
 import * as VpnModels from "../../bindings/github.com/skkvpn/free-vpn-new/internal/vpn/models";
 import * as Models from "../../bindings/github.com/skkvpn/free-vpn-new/models";
 
+export interface AppSettings {
+  dns: string;
+  kill_switch: boolean;
+}
+
 export function useVpn() {
   const [status, setStatus] = useState<VpnModels.VpnStatus>(new VpnModels.VpnStatus());
   const [profiles, setProfiles] = useState<Models.ProfileInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [settings, setSettings] = useState<AppSettings>({ dns: "1.1.1.1", kill_switch: true });
   const errorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -99,15 +105,37 @@ export function useVpn() {
     }
   }, [refreshProfiles, showError]);
 
+  const loadSettings = useCallback(async () => {
+    try {
+      const s = await VpnService.GetSettings();
+      setSettings({ dns: s.dns, kill_switch: s.kill_switch });
+    } catch (e: any) {
+      console.error("settings:", e);
+    }
+  }, []);
+
+  const saveSettings = useCallback(async (s: AppSettings) => {
+    const v = new VpnModels.Settings();
+    v.dns = s.dns;
+    v.kill_switch = s.kill_switch;
+    try {
+      await VpnService.SaveSettings(v);
+      setSettings(s);
+    } catch (e: any) {
+      showError(e.message || "Save settings failed");
+    }
+  }, [showError]);
+
   useEffect(() => {
     refreshProfiles();
     refreshStatus();
+    loadSettings();
     pollingRef.current = setInterval(refreshStatus, 2000);
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
       if (errorTimer.current) clearTimeout(errorTimer.current);
     };
-  }, [refreshProfiles, refreshStatus]);
+  }, [refreshProfiles, refreshStatus, loadSettings]);
 
-  return { status, profiles, loading, error, theme, toggleTheme, dismissError, register, connect, disconnect, deleteProfile };
+  return { status, profiles, loading, error, theme, settings, toggleTheme, dismissError, register, connect, disconnect, deleteProfile, loadSettings, saveSettings };
 }

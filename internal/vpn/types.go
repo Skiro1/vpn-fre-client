@@ -46,6 +46,16 @@ type VpnStatus struct {
 	Uptime    string `json:"uptime"`
 }
 
+type Settings struct {
+	Dns        string `json:"dns"`
+	KillSwitch bool   `json:"kill_switch"`
+}
+
+var DefaultSettings = Settings{
+	Dns:        "1.1.1.1",
+	KillSwitch: true,
+}
+
 type EndpointInfo struct {
 	Address string `json:"address"`
 	RTT     string `json:"rtt"`

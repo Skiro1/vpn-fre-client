@@ -31,15 +31,21 @@ export function GetProfile(name: string): $CancellablePromise<$models.ProfileInf
     });
 }
 
+export function GetSettings(): $CancellablePromise<vpn$0.Settings> {
+    return $Call.ByID(2992569806).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 export function GetStatus(): $CancellablePromise<vpn$0.VpnStatus | null> {
     return $Call.ByID(147336629).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType4($result);
     });
 }
 
 export function ListProfiles(): $CancellablePromise<($models.ProfileInfo | null)[]> {
     return $Call.ByID(1983022287).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType5($result);
     });
 }
 
@@ -49,9 +55,14 @@ export function Register(profileName: string, license: string): $CancellableProm
     });
 }
 
+export function SaveSettings(settings: vpn$0.Settings): $CancellablePromise<void> {
+    return $Call.ByID(3700474153, settings);
+}
+
 // Private type creation functions
 const $$createType0 = $models.ProfileInfo.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
-const $$createType2 = vpn$0.VpnStatus.createFrom;
-const $$createType3 = $Create.Nullable($$createType2);
-const $$createType4 = $Create.Array($$createType1);
+const $$createType2 = vpn$0.Settings.createFrom;
+const $$createType3 = vpn$0.VpnStatus.createFrom;
+const $$createType4 = $Create.Nullable($$createType3);
+const $$createType5 = $Create.Array($$createType1);

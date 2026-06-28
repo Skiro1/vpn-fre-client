@@ -5,6 +5,31 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
+export class Settings {
+    "dns": string;
+    "kill_switch": boolean;
+
+    /** Creates a new Settings instance. */
+    constructor($$source: Partial<Settings> = {}) {
+        if (!("dns" in $$source)) {
+            this["dns"] = "";
+        }
+        if (!("kill_switch" in $$source)) {
+            this["kill_switch"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Settings instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Settings {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new Settings($$parsedSource as Partial<Settings>);
+    }
+}
+
 export class VpnStatus {
     "connected": boolean;
     "profile": string;

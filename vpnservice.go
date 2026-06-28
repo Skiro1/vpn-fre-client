@@ -8,14 +8,17 @@ import (
 )
 
 type VpnService struct {
-	client  *vpn.WarpClient
-	tunnel  *vpn.TunnelManager
+	client   *vpn.WarpClient
+	tunnel   *vpn.TunnelManager
+	settings *vpn.Settings
 }
 
 func NewVpnService() *VpnService {
+	settings, _ := vpn.LoadSettings()
 	return &VpnService{
-		client: vpn.NewWarpClient(),
-		tunnel: vpn.NewTunnelManager(),
+		client:   vpn.NewWarpClient(),
+		tunnel:   vpn.NewTunnelManager(),
+		settings: settings,
 	}
 }
 
@@ -91,7 +94,12 @@ func (s *VpnService) Connect(profileName string) error {
 		}
 	}
 
-	return s.tunnel.Up(profile)
+	settings, err := vpn.LoadSettings()
+	if err != nil {
+		return fmt.Errorf("load settings: %w", err)
+	}
+
+	return s.tunnel.Up(profile, settings)
 }
 
 func (s *VpnService) Disconnect() error {
@@ -139,6 +147,21 @@ type ProfileInfo struct {
 	Endpoint string `json:"endpoint"`
 	AccountID string `json:"account_id"`
 	WarpPlus bool   `json:"warp_plus"`
+}
+
+func (s *VpnService) GetSettings() vpn.Settings {
+	if s.settings != nil {
+		return *s.settings
+	}
+	return vpn.DefaultSettings
+}
+
+func (s *VpnService) SaveSettings(settings vpn.Settings) error {
+	if err := vpn.SaveSettings(&settings); err != nil {
+		return err
+	}
+	s.settings = &settings
+	return nil
 }
 
 func toProfileInfo(p *vpn.Profile) *ProfileInfo {

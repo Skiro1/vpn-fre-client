@@ -26,12 +26,13 @@ type TunnelManager struct {
 }
 
 type activeTunnel struct {
-	dev      *device.Device
-	tun      tun.Device
-	uapi     net.Listener
-	intf     string
-	profile  *Profile
-	stopCh   chan struct{}
+	dev       *device.Device
+	tun       tun.Device
+	uapi      net.Listener
+	intf      string
+	profile   *Profile
+	settings  *Settings
+	stopCh    chan struct{}
 	startedAt time.Time
 	closeOnce sync.Once
 }
@@ -40,7 +41,7 @@ func NewTunnelManager() *TunnelManager {
 	return &TunnelManager{}
 }
 
-func (tm *TunnelManager) Up(profile *Profile) error {
+func (tm *TunnelManager) Up(profile *Profile, settings *Settings) error {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
@@ -64,6 +65,7 @@ func (tm *TunnelManager) Up(profile *Profile) error {
 		tun:       tundev,
 		intf:      intfName,
 		profile:   profile,
+		settings:  settings,
 		stopCh:    make(chan struct{}),
 		startedAt: time.Now(),
 	}
@@ -107,9 +109,16 @@ func (tm *TunnelManager) Up(profile *Profile) error {
 		return fmt.Errorf("device up: %w", err)
 	}
 
-	if err := configureNetwork(intfName, profile); err != nil {
+	if err := configureNetwork(intfName, profile, settings); err != nil {
 		at.close()
 		return fmt.Errorf("configure network: %w", err)
+	}
+
+	if settings.KillSwitch {
+		if err := enableKillSwitch(profile.Endpoint); err != nil {
+			at.close()
+			return fmt.Errorf("kill switch: %w", err)
+		}
 	}
 
 	tm.activeTun = at
@@ -169,6 +178,10 @@ func (tm *TunnelManager) IsActive() bool {
 
 func (at *activeTunnel) close() {
 	at.closeOnce.Do(func() {
+		if at.settings != nil && at.settings.KillSwitch {
+			disableKillSwitch()
+		}
+
 		if at.tun != nil {
 			if nativeTun, ok := at.tun.(*tun.NativeTun); ok {
 				luid := winipcfg.LUID(nativeTun.LUID())
@@ -296,11 +309,11 @@ func configureDevice(dev *device.Device, profile *Profile) error {
 	return nil
 }
 
-func configureNetwork(intfName string, profile *Profile) error {
+func configureNetwork(intfName string, profile *Profile, settings *Settings) error {
 	addr := strings.Split(profile.Address, "/")[0]
 
 	runCmd(fmt.Sprintf(`netsh interface ip set address "%s" static %s 255.255.255.255`, intfName, addr))
-	runCmd(fmt.Sprintf(`netsh interface ip set dns "%s" static 1.1.1.1 register=primary`, intfName))
+	runCmd(fmt.Sprintf(`netsh interface ip set dns "%s" static %s register=primary`, intfName, settings.Dns))
 
 	host := profile.Endpoint
 	if !strings.Contains(host, ":") {
@@ -364,4 +377,34 @@ func runCmdOutput(cmd string) (string, error) {
 	c := exec.Command("cmd", "/c", cmd)
 	out, err := c.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
+}
+
+func enableKillSwitch(endpoint string) error {
+	if ep := extractIP(endpoint); ep != "" {
+		runCmd(fmt.Sprintf(`netsh advfirewall firewall add rule name="SKKVPN Allow EP" dir=out action=allow remoteip=%s`, ep))
+	}
+	return runCmd(`netsh advfirewall firewall add rule name="SKKVPN Block" dir=out action=block`)
+}
+
+func disableKillSwitch() {
+	runCmd(`netsh advfirewall firewall delete rule name="SKKVPN Allow EP"`)
+	runCmd(`netsh advfirewall firewall delete rule name="SKKVPN Block"`)
+}
+
+func extractIP(endpoint string) string {
+	if !strings.Contains(endpoint, ":") {
+		endpoint = endpoint + ":2408"
+	}
+	host, _, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return ""
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return host
+	}
+	ips, err := net.LookupHost(host)
+	if err != nil || len(ips) == 0 {
+		return ""
+	}
+	return ips[0]
 }

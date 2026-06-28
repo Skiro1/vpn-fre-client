@@ -101,3 +101,50 @@ func ListProfiles() ([]string, error) {
 func DeleteProfile(name string) error {
 	return os.Remove(ProfilePath(name))
 }
+
+func settingsDir() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		dir = os.TempDir()
+	}
+	return filepath.Join(dir, "free-vpn")
+}
+
+func SettingsPath() string {
+	return filepath.Join(settingsDir(), "settings.json")
+}
+
+func LoadSettings() (*Settings, error) {
+	data, err := os.ReadFile(SettingsPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			s := DefaultSettings
+			return &s, nil
+		}
+		return nil, fmt.Errorf("read settings: %w", err)
+	}
+	var s Settings
+	if err := json.Unmarshal(data, &s); err != nil {
+		s = DefaultSettings
+		return &s, nil
+	}
+	if s.Dns == "" {
+		s.Dns = DefaultSettings.Dns
+	}
+	return &s, nil
+}
+
+func SaveSettings(s *Settings) error {
+	dir := settingsDir()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create settings dir: %w", err)
+	}
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal settings: %w", err)
+	}
+	if err := os.WriteFile(SettingsPath(), data, 0600); err != nil {
+		return fmt.Errorf("write settings: %w", err)
+	}
+	return nil
+}
